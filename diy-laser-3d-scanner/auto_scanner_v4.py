@@ -85,7 +85,9 @@ CALIBRATE_FEED_MM_MIN = 120.0  # slow Z probing
 # Homing. Set HOME_ON_START False if the machine is already homed and you
 # do not want G28 (which can crash if the optical jig blocks the probe).
 HOME_ON_START = True
-HOME_GCODE = "G28"  # hardware: S1 Plus usually has ABL; use G28 X Y if Z home is unsafe
+HOME_GCODE = "G28 X Y"  # laterals only — Z is homed optically, not on the microswitch
+# Optical Z home: focus is declared when the two net laser signals balance.
+FOCUS_BALANCE_THRESHOLD = 150.0  # |signal1 - signal2| counts
 
 # Safe Z used before calibration when firmware Z=0 is unknown / after home.
 PRE_CAL_SAFE_Z = 40.0  # mm machine Z after homing, before descending onto the bed
@@ -926,13 +928,46 @@ class LaserScanner:
         print("Communication test passed. Laser is OFF. Marlin and ESP32 both replied.")
         return 0
 
+    def optical_z_home(self) -> None:
+        """Z home without the microswitch: descend until the photodiodes balance.
+
+        Focus is declared when |signal1 - signal2| drops below
+        FOCUS_BALANCE_THRESHOLD; that height becomes Z=0 via 'G92 Z0'.
+        """
+        assert self.printer and self.head
+        self.head.laser_on()
+        try:
+            for i in range(MAX_Z_CALIB_STEPS):
+                sample = self.sample()
+                delta = abs(sample.signal1 - sample.signal2)
+                self.log.info(
+                    "optical Z home z=%.3f sig=(%.1f,%.1f) |diff|=%.1f",
+                    self.printer.z,
+                    sample.signal1,
+                    sample.signal2,
+                    delta,
+                )
+                if sample.valid and delta < FOCUS_BALANCE_THRESHOLD:
+                    self.printer.send("G92 Z0")
+                    self.printer.z = 0.0
+                    self.log.info("Optical focus reached — Z origin set (G92 Z0)")
+                    return
+                nxt = self.printer.z - Z_CALIBRATE_STEP_MM
+                if nxt < Z_MIN:
+                    break
+                self.printer.move_abs(z=nxt, feed=CALIBRATE_FEED_MM_MIN)
+        finally:
+            self.head.laser_off()
+        raise ScannerError("optical Z homing failed — laser focus never balanced")
+
     def home_and_safe(self) -> None:
         assert self.printer
         if HOME_ON_START:
-            self.log.info("Homing with %s — confirm the optical jig cannot collide", HOME_GCODE)
+            self.log.info("Homing laterals with %s — Z homes optically", HOME_GCODE)
             self.printer.send(HOME_GCODE, timeout_s=MARLIN_MOVE_TIMEOUT_S)
             self.printer.ensure_absolute()
             self.printer.sync_position()
+            self.optical_z_home()
         else:
             self.printer.ensure_absolute()
             try:
