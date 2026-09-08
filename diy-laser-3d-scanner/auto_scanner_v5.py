@@ -96,6 +96,9 @@ HOME_ON_START = True
 HOME_GCODE = "G28 X Y"  # Home X/Y only — do NOT probe Z (no CR-Touch installed)
 RESET_BLTOUCH_BEFORE_HOME = False  # No BLTouch / CR-Touch hardware present
 OPTICAL_Z_HOME = True  # Apply G92 Z0 at the laser focus point on the bed
+HOME_XY_ORIGIN_GCODE = "G92 X0 Y0"  # Clear negative endstop offsets after G28 X Y
+POST_HOME_X = 100.0  # mm — park near bed center once the origin is reset
+POST_HOME_Y = 100.0  # mm
 
 PRE_CAL_SAFE_Z = 40.0  # mm machine Z after homing (kept above the bed)
 
@@ -852,6 +855,10 @@ class LaserScanner:
         so a plain 'G28' (which homes Z with the probe) must NOT be sent.
         We home laterals with HOME_GCODE ('G28 X Y') and set Z=0 in
         calibrate_bed() via an optical focus search (OPTICAL_Z_HOME).
+
+        The physical endstops sit outside the bed, so Marlin reports negative
+        X/Y right after homing. HOME_XY_ORIGIN_GCODE ('G92 X0 Y0') resets the
+        lateral origin before any move, then the head parks near bed center.
         """
         assert self.printer
         if HOME_ON_START:
@@ -859,7 +866,16 @@ class LaserScanner:
                           HOME_GCODE)
             self.printer.send(HOME_GCODE, timeout_s=MARLIN_MOVE_TIMEOUT_S)
             self.printer.ensure_absolute()
+            self.log.info("Resetting lateral origin (%s)", HOME_XY_ORIGIN_GCODE)
+            self.printer.send(HOME_XY_ORIGIN_GCODE, timeout_s=MARLIN_MOVE_TIMEOUT_S)
+            self.printer.x = 0.0
+            self.printer.y = 0.0
             self.printer.sync_position()
+            self.printer.move_abs(
+                x=clamp(POST_HOME_X, X_MIN, X_MAX),
+                y=clamp(POST_HOME_Y, Y_MIN, Y_MAX),
+                feed=TRAVEL_FEED_MM_MIN,
+            )
         else:
             self.printer.ensure_absolute()
             try:
