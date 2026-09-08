@@ -1,0 +1,30 @@
+2026-09-07 14:49:16,988 DEBUG ESP32 << OK:F
+2026-09-07 14:49:16,988 INFO GCODE >> M155 S0
+2026-09-07 14:49:16,991 DEBUG MARLIN << ok
+2026-09-07 14:49:16,992 INFO GCODE >> G90
+2026-09-07 14:49:16,995 DEBUG MARLIN << ok
+2026-09-07 14:49:16,995 INFO GCODE >> M17
+2026-09-07 14:49:16,997 DEBUG MARLIN << ok
+2026-09-07 14:49:16,998 INFO Serial ports open: printer=COM8 esp32=COM7 baud=115200
+2026-09-07 14:49:46,720 INFO Homing with G28 — confirm the optical jig cannot collide
+2026-09-07 14:49:46,721 INFO GCODE >> G28
+2026-09-07 14:49:49,480 DEBUG MARLIN << echo:busy: processing
+2026-09-07 14:49:51,480 DEBUG MARLIN << echo:busy: processing
+2026-09-07 14:49:53,480 DEBUG MARLIN << echo:busy: processing
+2026-09-07 14:49:55,480 DEBUG MARLIN << echo:busy: processing
+2026-09-07 14:49:57,480 DEBUG MARLIN << echo:busy: processing
+2026-09-07 14:49:59,480 DEBUG MARLIN << echo:busy: processing
+2026-09-07 14:50:01,480 DEBUG MARLIN << echo:busy: processing
+2026-09-07 14:50:03,480 DEBUG MARLIN << echo:busy: processing
+2026-09-07 14:50:05,480 DEBUG MARLIN << echo:busy: processing
+2026-09-07 14:50:11,164 DEBUG MARLIN << Error:!! STOP called because of BLTouch error - restart with M999
+2026-09-07 14:50:11,165 ERROR EMERGENCY SHUTDOWN: Marlin error (G28): Error:!! STOP called because of BLTouch error - restart with M999
+2026-09-07 14:50:11,167 DEBUG ESP32 << OK:F
+2026-09-07 14:50:11,269 INFO GCODE >> G90
+2026-09-07 14:50:11,270 INFO GCODE >> G90
+2026-09-07 14:50:11,274 DEBUG MARLIN << Error:Printer stopped due to errors. Fix the error and use M999 to restart. (Temperature is reset. Set it after restarting)
+2026-09-07 14:50:11,275 ERROR G90 restore failed: Marlin error (G90): Error:Printer stopped due to errors. Fix the error and use M999 to restart. (Temperature is reset. Set it after restarting)
+2026-09-07 14:50:11,279 DEBUG ESP32 << OK:F
+2026-09-07 14:50:11,282 DEBUG ESP32 << OK:F
+2026-09-07 14:50:11,284 DEBUG ESP32 << OK:F
+2026-09-07 14:50:11,296 INFO Serial ports closed. Data directory: C:\Users\aaaa\diy-laser-3d-scanner\scan_20260907_144913

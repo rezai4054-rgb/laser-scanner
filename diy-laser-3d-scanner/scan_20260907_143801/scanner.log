@@ -1,0 +1,44 @@
+2026-09-07 14:38:04,329 DEBUG ESP32 banner << 0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)
+2026-09-07 14:38:04,331 DEBUG ESP32 banner << configsip: 0, SPIWP:0xee
+2026-09-07 14:38:04,333 DEBUG ESP32 banner << clk_drv:0x00,q_drv:0x00,d_drv:0x00,cs0_drv:0x00,hd_drv:0x00,wp_drv:0x00
+2026-09-07 14:38:04,334 DEBUG ESP32 banner << mode:DIO, clock div:1
+2026-09-07 14:38:04,334 DEBUG ESP32 banner << load:0x3fff0030,len:4876
+2026-09-07 14:38:04,335 DEBUG ESP32 banner << ho 0 tail 12 room 4
+2026-09-07 14:38:04,336 DEBUG ESP32 banner << load:0x40078000,len:16532
+2026-09-07 14:38:04,336 DEBUG ESP32 banner << load:0x40080400,len:3500
+2026-09-07 14:38:04,337 DEBUG ESP32 banner << entry 0x400805b4
+2026-09-07 14:38:04,337 DEBUG ESP32 banner << READY
+2026-09-07 14:38:04,339 DEBUG ESP32 banner << ESP32 laser scanner — laser OFF
+2026-09-07 14:38:04,345 DEBUG ESP32 banner << ADS1115 A0/A1 + AO3400 GPIO25 Active-HIGH
+2026-09-07 14:38:04,346 DEBUG ESP32 banner << Type ? or H for diagnostic menu
+2026-09-07 14:38:04,347 DEBUG ESP32 banner << ADS1115 Status: OK
+2026-09-07 14:38:05,384 DEBUG ESP32 << OK:F
+2026-09-07 14:38:05,384 INFO GCODE >> M155 S0
+2026-09-07 14:38:05,387 DEBUG MARLIN << ok
+2026-09-07 14:38:05,387 INFO GCODE >> G90
+2026-09-07 14:38:05,390 DEBUG MARLIN << ok
+2026-09-07 14:38:05,390 INFO GCODE >> M17
+2026-09-07 14:38:05,393 DEBUG MARLIN << ok
+2026-09-07 14:38:05,393 INFO Serial ports open: printer=COM8 esp32=COM7 baud=115200
+2026-09-07 14:42:24,092 INFO Homing with G28 — confirm the optical jig cannot collide
+2026-09-07 14:42:24,101 INFO GCODE >> G28
+2026-09-07 14:42:26,850 DEBUG MARLIN << echo:busy: processing
+2026-09-07 14:42:28,850 DEBUG MARLIN << echo:busy: processing
+2026-09-07 14:42:30,850 DEBUG MARLIN << echo:busy: processing
+2026-09-07 14:42:32,850 DEBUG MARLIN << echo:busy: processing
+2026-09-07 14:42:34,850 DEBUG MARLIN << echo:busy: processing
+2026-09-07 14:42:36,850 DEBUG MARLIN << echo:busy: processing
+2026-09-07 14:42:38,850 DEBUG MARLIN << echo:busy: processing
+2026-09-07 14:42:40,850 DEBUG MARLIN << echo:busy: processing
+2026-09-07 14:42:42,850 DEBUG MARLIN << echo:busy: processing
+2026-09-07 14:42:48,034 DEBUG MARLIN << Error:!! STOP called because of BLTouch error - restart with M999
+2026-09-07 14:42:48,035 ERROR EMERGENCY SHUTDOWN: Marlin error (G28): Error:!! STOP called because of BLTouch error - restart with M999
+2026-09-07 14:42:48,038 DEBUG ESP32 << OK:F
+2026-09-07 14:42:48,140 INFO GCODE >> G90
+2026-09-07 14:42:48,141 INFO GCODE >> G90
+2026-09-07 14:42:48,145 DEBUG MARLIN << Error:Printer stopped due to errors. Fix the error and use M999 to restart. (Temperature is reset. Set it after restarting)
+2026-09-07 14:42:48,145 ERROR G90 restore failed: Marlin error (G90): Error:Printer stopped due to errors. Fix the error and use M999 to restart. (Temperature is reset. Set it after restarting)
+2026-09-07 14:42:48,149 DEBUG ESP32 << OK:F
+2026-09-07 14:42:48,152 DEBUG ESP32 << OK:F
+2026-09-07 14:42:48,155 DEBUG ESP32 << OK:F
+2026-09-07 14:42:48,166 INFO Serial ports closed. Data directory: C:\Users\aaaa\diy-laser-3d-scanner\scan_20260907_143801

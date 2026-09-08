@@ -1,0 +1,50 @@
+{
+  "status": "emergency",
+  "error": "target out of limits: X-7.500 Y-9.000 Z40.000 (allowed X0.0-220.0 Y0.0-220.0 Z0.0-400.0)",
+  "timestamp_utc": "2026-09-07T22:55:01.275826Z",
+  "dry_run": false,
+  "point_count": 0,
+  "Z_BED_FOCUS": null,
+  "object_height_estimate_mm": 20.0,
+  "Z_START": 40.0,
+  "homing": {
+    "HOME_GCODE": "G28 X Y",
+    "OPTICAL_Z_HOME": true,
+    "RESET_BLTOUCH_BEFORE_HOME": false
+  },
+  "ports": {
+    "printer": "COM8",
+    "esp32": "COM7",
+    "baud": 115200
+  },
+  "limits": {
+    "X": [
+      0.0,
+      220.0
+    ],
+    "Y": [
+      0.0,
+      220.0
+    ],
+    "Z": [
+      0.0,
+      400.0
+    ]
+  },
+  "scan_window_mm": {
+    "size_x": 40.0,
+    "size_y": 40.0
+  },
+  "thresholds": {
+    "SIGNAL_THRESHOLD": 320.0,
+    "MIN_TOTAL_SIGNAL": 640.0,
+    "DETECT_RATIO_THRESHOLD": 960.0,
+    "RATIO_DEADBAND": 0.08,
+    "Z_CORRECTION_STEP": 0.05,
+    "MAX_Z_CORRECTION_PER_CYCLE": 0.25,
+    "Z_CORRECTION_SIGN": 1,
+    "DROP_SEARCH_MAX_MM": 30.0,
+    "EMPTY_LINES_TO_STOP": 4
+  },
+  "output_dir": "C:\\Users\\aaaa\\diy-laser-3d-scanner\\scan_20260908_022427"
+}
