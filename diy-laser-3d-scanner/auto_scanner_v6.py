@@ -10,9 +10,12 @@ Hardware pairing:
   - Laser: AO3400 N-MOSFET GPIO25 Active-HIGH (HIGH=ON, LOW=OFF)
 
 Workflow (v6):
-  open ports -> comm test -> G28 X Y -> optical Z home (G92 Z0) -> bed focus
-  -> user safe height + laser guide -> rough stop-and-probe map -> fine
-  Z-tracking raster -> outputs.
+  open ports -> comm test -> G28 X Y -> move to bed center -> optical Z home
+  on the empty bed (G92 Z0 = machine zero = bed level) -> ask placement height
+  and raise Z -> laser ON, wait for ENTER -> object-top detection -> rough
+  stop-and-probe map -> fine Z-tracking raster -> outputs.
+  The operator is asked exactly three things: the real-run confirmation, the
+  placement height in mm, and ENTER after placing the object.
 
 Usage:
   python auto_scanner_v6.py
@@ -77,9 +80,9 @@ BED_CENTER_Y = 150.0  # mm
 SENSOR_OFFSET_X = 0.0  # mm, +X is right when facing the printer
 SENSOR_OFFSET_Y = 0.0  # mm, +Y is toward the back
 
-# Default scan window around the bed center (clipped to printer limits).
-# The operator can shrink it at startup; the fine scan then narrows it further
-# to the region the rough map found an object in.
+# Fixed rough-scan window around the bed center (clipped to printer limits).
+# No scan-window size is asked from the operator; the fine scan narrows this
+# down to the region where the rough map actually found an object.
 SCAN_SIZE_X = 300.0  # mm
 SCAN_SIZE_Y = 300.0  # mm
 
@@ -705,10 +708,9 @@ class LaserScanner:
         self.z_safe: Optional[float] = None
         # Route map built by rough_scan(): (x, y) -> absolute Z or None (empty).
         self.rough_map: Dict[Tuple[float, float], Optional[float]] = {}
+        # Machine Z zero (bed level) vs the top of the placed object.
+        self.z_object_top: Optional[float] = None
         self.object_height_est = 0.0
-        # Scan window around the bed center; overridable at startup.
-        self.scan_size_x = SCAN_SIZE_X
-        self.scan_size_y = SCAN_SIZE_Y
         self.z_start = PRE_CAL_SAFE_Z
         self.ratio_filt = 0.0
         self.total_filt = 0.0
@@ -815,13 +817,14 @@ class LaserScanner:
             "Z_BED_FOCUS": self.z_bed_focus,
             "user_height_above_bed_mm": self.object_height_est,
             "Z_SAFE": self.z_safe,
+            "Z_OBJECT_TOP": self.z_object_top,
             "Z_START": self.z_start,
             "calibration_mode": CALIBRATION_MODE,
             "rough_map_cells": len(self.rough_map),
             "rough_map_hits": sum(1 for v in self.rough_map.values() if v is not None),
             "ports": {"printer": PRINTER_PORT, "esp32": ESP32_PORT, "baud": BAUD},
             "limits": {"X": [X_MIN, X_MAX], "Y": [Y_MIN, Y_MAX], "Z": [Z_MIN, Z_MAX]},
-            "scan_window_mm": {"size_x": self.scan_size_x, "size_y": self.scan_size_y},
+            "scan_window_mm": {"size_x": SCAN_SIZE_X, "size_y": SCAN_SIZE_Y},
             "thresholds": {
                 "SIGNAL_THRESHOLD": SIGNAL_THRESHOLD,
                 "MIN_TOTAL_SIGNAL": MIN_TOTAL_SIGNAL,
@@ -925,7 +928,12 @@ class LaserScanner:
             return
         self.printer.move_abs(z=target, feed=Z_FEED_MM_MIN, wait=False)
 
-    def run_comm_test(self) -> int:
+    def run_comm_test(self, pulse_laser: bool = True) -> int:
+        """Startup link check for Marlin and the ESP32 head.
+
+        Runs on every start, before the real-run confirmation; the laser is only
+        pulsed in the standalone --comm-test mode, never before confirmation.
+        """
         assert self.printer and self.head
         self.log.info("=== communication test ===")
         self.head.laser_off()
@@ -942,8 +950,9 @@ class LaserScanner:
         except ScannerError as exc:
             raise ScannerError(f"Marlin M115 failed: {exc}") from exc
         self.head.laser_off()
-        self.head.laser_on()
-        self.head.laser_off()
+        if pulse_laser:
+            self.head.laser_on()
+            self.head.laser_off()
         sample = self.sample()
         self.log.info(
             "DATA amb=(%.1f,%.1f) las=(%.1f,%.1f) sig=(%.1f,%.1f) total=%.1f ratio=%.4f valid=%s (%s)",
@@ -1000,7 +1009,12 @@ class LaserScanner:
                 if sample.valid and delta < FOCUS_BALANCE_THRESHOLD:
                     self.printer.send("G92 Z0")
                     self.printer.z = 0.0
-                    self.log.info("Optical focus reached — machine Z zero set (G92 Z0)")
+                    # Machine zero is established here, on the EMPTY bed at the
+                    # center, before the object is placed. It is therefore also
+                    # the bed-level reference used by the bed/cliff logic, and it
+                    # is never re-zeroed for the rest of the run.
+                    self.z_bed_focus = 0.0
+                    self.log.info("Optical focus reached — machine Z zero set (G92 Z0); bed level = 0.000")
                     return
                 nxt = self.printer.z - Z_CALIBRATE_STEP_MM
                 if nxt < Z_MIN:
@@ -1010,79 +1024,28 @@ class LaserScanner:
             self.head.laser_off()
         raise ScannerError("optical Z homing failed — laser focus never balanced")
 
-    def home_and_safe(self) -> None:
-        """G28 X Y, optical Z home, then park over the bed center at a safe Z."""
+    def home_and_center(self) -> None:
+        """G28 X Y then park over the bed center; optical Z zeroing follows."""
         assert self.printer
         if HOME_ON_START:
             self.log.info("Homing laterals with %s — Z homes optically", HOME_GCODE)
             self.printer.send(HOME_GCODE, timeout_s=MARLIN_MOVE_TIMEOUT_S)
             self.printer.ensure_absolute()
             self.printer.sync_position()
-            self.optical_z_home()
         else:
             self.printer.ensure_absolute()
             try:
                 self.printer.sync_position()
             except ScannerError:
                 self.log.warning("M114 failed; using last commanded position")
-        z_safe = clamp(max(self.printer.z, PRE_CAL_SAFE_Z), Z_MIN, Z_MAX)
-        self.printer.move_abs(z=z_safe, feed=Z_FEED_MM_MIN)
-        # Bed center is the reference XY for the bed focus search.
+        z_lift = clamp(max(self.printer.z, PRE_CAL_SAFE_Z), Z_MIN, Z_MAX)
+        self.printer.move_abs(z=z_lift, feed=Z_FEED_MM_MIN)
+        # Bed center: optical Z zeroing and object placement both happen here.
         self.printer.move_abs(
             x=clamp(BED_CENTER_X + SENSOR_OFFSET_X, X_MIN, X_MAX),
             y=clamp(BED_CENTER_Y + SENSOR_OFFSET_Y, Y_MIN, Y_MAX),
             feed=TRAVEL_FEED_MM_MIN,
         )
-
-    def calibrate_bed(self) -> None:
-        assert self.printer and self.head
-        while True:
-            self.log.info("Bed calibration: move to center and descend until optical contact")
-            self.head.laser_off()
-            cx = clamp(BED_CENTER_X + SENSOR_OFFSET_X, X_MIN, X_MAX)
-            cy = clamp(BED_CENTER_Y + SENSOR_OFFSET_Y, Y_MIN, Y_MAX)
-            self.printer.move_abs(x=cx, y=cy, feed=TRAVEL_FEED_MM_MIN)
-            self.printer.move_abs(z=clamp(PRE_CAL_SAFE_Z, Z_MIN, Z_MAX), feed=Z_FEED_MM_MIN)
-            found = False
-            z_hit = None
-            last_log_z = self.printer.z
-            # Bed focus uses the finest Z step of the whole run (0.1 mm).
-            for i in range(MAX_Z_CALIB_STEPS):
-                if self.printer.z <= Z_MIN + 0.01:
-                    break
-                sample = self.sample()
-                if CALIBRATION_MODE and last_log_z - self.printer.z >= 0.2 - 1e-9:
-                    self.log_calibration_row("bed_focus", sample)
-                    last_log_z = self.printer.z
-                self.log.info(
-                    "calib z=%.3f total=%.1f valid=%s",
-                    self.printer.z,
-                    sample.total_signal,
-                    sample.valid,
-                )
-                if self.contact(sample):
-                    found = True
-                    # z_bed_focus is the absolute machine Z where the bed was
-                    # seen. All height logic is relative to it, never to zero.
-                    z_hit = self.printer.z
-                    break
-                nxt = self.printer.z - BED_FOCUS_STEP_MM
-                if nxt < Z_MIN:
-                    break
-                self.printer.move_abs(z=nxt, feed=CALIBRATE_FEED_MM_MIN)
-            if found and z_hit is not None:
-                self.z_bed_focus = z_hit
-                self.log.info("Z_BED_FOCUS (optical bed, machine Z) = %.4f mm", self.z_bed_focus)
-                # Back off so the following object search does not grind the bed.
-                lift = clamp(self.z_bed_focus + SAFE_CLEARANCE, Z_MIN, Z_MAX)
-                self.printer.move_abs(z=lift, feed=Z_FEED_MM_MIN)
-                return
-            self.head.laser_off()
-            self.log.error("Bed calibration failed — no optical contact")
-            print("Calibration failed. Laser is OFF. Motion stopped at last commanded Z.")
-            if not ask_yes_no("Retry bed calibration?", default=True):
-                raise ScannerError("bed calibration failed and user declined retry")
-            self.printer.move_abs(z=clamp(PRE_CAL_SAFE_Z, Z_MIN, Z_MAX), feed=Z_FEED_MM_MIN)
 
     @property
     def z_floor(self) -> float:
@@ -1090,36 +1053,68 @@ class LaserScanner:
         assert self.z_bed_focus is not None
         return self.z_bed_focus + BED_EPS_MM
 
-    def ask_safe_height(self) -> None:
-        """Prompt for the working height above the bed, park there, laser ON.
+    def ask_placement_height(self) -> None:
+        """Raise Z by the operator's value (measured from machine zero), laser ON.
 
-        z_safe is measured from z_bed_focus (the absolute machine Z of the bed),
-        never from machine zero.
+        Machine zero already exists at this point; the object is not on the bed
+        yet, so nothing is searched for until the operator presses ENTER.
         """
         assert self.printer and self.head and self.z_bed_focus is not None
         user_height_mm = ask_float(
-            "Enter safe Z height above bed (mm): ",
+            "How many millimeters should I go up for object placement? ",
             0.5,
-            max(0.5, min(Z_MAX - self.z_bed_focus - 1.0, 350.0)),
+            min(350.0, Z_MAX - 1.0),
         )
         self.z_safe = clamp(self.z_bed_focus + user_height_mm, Z_MIN, Z_MAX)
         self.z_start = self.z_safe
         self.object_height_est = user_height_mm
+        # DRY_RUN only: pretend the placed object is half the clearance tall.
         self.obj_top_sim = self.z_bed_focus + max(user_height_mm * 0.5, 1.0)
         self.printer.move_abs(z=self.z_safe, feed=Z_FEED_MM_MIN)
         # The laser doubles as a placement pointer while the operator works.
         self.head.laser_on()
-        self.log.info("z_safe = %.3f mm (bed %.3f + %.3f)", self.z_safe, self.z_bed_focus, user_height_mm)
-        input("Place the object on the bed, then press ENTER to start scanning...")
+        self.log.info("Placement height Z=%.3f mm above machine zero", self.z_safe)
+        input("Place the object so that its center is under the laser, then press ENTER to start.")
+
+    def find_object_top(self) -> None:
+        """First detection of the placed object, after ENTER.
+
+        This is neither machine zeroing nor bed calibration: it descends from the
+        placement height until the sensor sees the object and stores that Z as
+        the scan starting reference.
+        """
+        assert self.printer and self.head and self.z_bed_focus is not None
+        self.log.info("Searching for the object top from Z=%.3f", self.printer.z)
+        last_log_z = self.printer.z
+        for _ in range(MAX_Z_CALIB_STEPS):
+            sample = self.sample()
+            if CALIBRATION_MODE and last_log_z - self.printer.z >= 0.2 - 1e-9:
+                self.log_calibration_row("object_top", sample)
+                last_log_z = self.printer.z
+            if self.contact(sample):
+                self.update_filters(sample)
+                self.z_object_top = self.printer.z
+                self.log.info("Object top detected at machine Z=%.4f", self.z_object_top)
+                # Back off so the rough scan starts clear of the object.
+                self.printer.move_abs(z=clamp(self.z_safe or self.z_start, Z_MIN, Z_MAX), feed=Z_FEED_MM_MIN)
+                return
+            if self.printer.z <= self.z_floor + 1e-6:
+                break
+            nxt = max(self.z_floor, self.printer.z - BED_FOCUS_STEP_MM)
+            self.printer.move_abs(z=nxt, feed=CALIBRATE_FEED_MM_MIN)
+        self.head.laser_off()
+        raise ScannerError("object top not found before the bed floor — check placement and thresholds")
 
     def scan_window(self) -> Tuple[float, float, float, float]:
         """Full scan window (bed center +/- half the configured size), clipped."""
+        # Fixed window around the bed center: no scan-window size is ever asked
+        # from the operator; the fine scan narrows it via the rough map.
         cx = BED_CENTER_X + SENSOR_OFFSET_X
         cy = BED_CENTER_Y + SENSOR_OFFSET_Y
-        x0 = clamp(cx - self.scan_size_x / 2.0, X_MIN, X_MAX)
-        x1 = clamp(cx + self.scan_size_x / 2.0, X_MIN, X_MAX)
-        y0 = clamp(cy - self.scan_size_y / 2.0, Y_MIN, Y_MAX)
-        y1 = clamp(cy + self.scan_size_y / 2.0, Y_MIN, Y_MAX)
+        x0 = clamp(cx - SCAN_SIZE_X / 2.0, X_MIN, X_MAX)
+        x1 = clamp(cx + SCAN_SIZE_X / 2.0, X_MIN, X_MAX)
+        y0 = clamp(cy - SCAN_SIZE_Y / 2.0, Y_MIN, Y_MAX)
+        y1 = clamp(cy + SCAN_SIZE_Y / 2.0, Y_MIN, Y_MAX)
         return x0, x1, y0, y1
 
     def probe_cell(self, drop_floor: float) -> Optional[float]:
@@ -1341,10 +1336,17 @@ class LaserScanner:
             if y > y1 + 1e-6:
                 self.log.info("Y limit of scan window reached")
                 break
+        # Finish: laser OFF, park at a safe height over the bed center, then
+        # run() writes the outputs.
         self.head.laser_off()
         self.printer.ensure_absolute()
         safe_z = clamp(max(self.z_start, self.printer.z), Z_MIN, Z_MAX)
         self.printer.move_abs(z=safe_z, feed=Z_FEED_MM_MIN)
+        self.printer.move_abs(
+            x=clamp(BED_CENTER_X + SENSOR_OFFSET_X, X_MIN, X_MAX),
+            y=clamp(BED_CENTER_Y + SENSOR_OFFSET_Y, Y_MIN, Y_MAX),
+            feed=TRAVEL_FEED_MM_MIN,
+        )
 
     def confirm_real_run(self) -> None:
         print("\n=== SAFETY CONFIRMATION ===")
@@ -1366,23 +1368,20 @@ class LaserScanner:
                 rc = self.run_comm_test()
                 self._save_metadata(status="comm_test")
                 return rc
+            # Startup link check runs on every normal run too, before the
+            # operator confirms real motion (laser stays OFF here).
+            self.run_comm_test(pulse_laser=False)
             self.confirm_real_run()
-            # Scan window: operator value or the default, clipped to the limits.
-            self.scan_size_x = ask_float(
-                f"Scan window X size in mm [default {SCAN_SIZE_X:.0f}]: ",
-                ROUGH_STEP_MM,
-                X_MAX - X_MIN,
-                default=SCAN_SIZE_X,
-            )
-            self.scan_size_y = ask_float(
-                f"Scan window Y size in mm [default {SCAN_SIZE_Y:.0f}]: ",
-                ROUGH_STEP_MM,
-                Y_MAX - Y_MIN,
-                default=SCAN_SIZE_Y,
-            )
-            self.home_and_safe()
-            self.calibrate_bed()
-            self.ask_safe_height()
+            # 1) Laterals home, park over the bed center.
+            self.home_and_center()
+            # 2) Machine Z zero is established on the empty bed, before the
+            #    object is placed, and is never changed again.
+            self.optical_z_home()
+            # 3) Raise by the operator's value and wait for the object.
+            self.ask_placement_height()
+            # 4) Object-top detection happens only after the operator pressed
+            #    ENTER; the rough scan starts only after that.
+            self.find_object_top()
             if CALIBRATION_MODE:
                 # Diagnostics only: log signals during a slow descent, no scan.
                 self.calibration_descent()
